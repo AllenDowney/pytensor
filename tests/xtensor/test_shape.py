@@ -99,29 +99,17 @@ def test_unstack():
     unstacked_dims = {"a": 2, "b": 3, "c": 5, "d": 7}
     dims = ("abcd",)
     x = xtensor("x", dims=dims, shape=(2 * 3 * 5 * 7,))
+    dims_powerset = list(powerset(unstacked_dims.keys(), min_group_size=2))
+    other_dim_len = [int(np.prod([l for d, l in unstacked_dims.items() if d not in dims_to_unstack])) for dims_to_unstack in dims_powerset]
     outs = [
         unstack(
             x,
             abcd=(
                 {d: l for d, l in unstacked_dims.items() if d in dims_to_unstack}
-                | (
-                    {}
-                    if set(dims_to_unstack) == set(unstacked_dims)
-                    else {
-                        "other": int(
-                            np.prod(
-                                [
-                                    l
-                                    for d, l in unstacked_dims.items()
-                                    if d not in dims_to_unstack
-                                ]
-                            )
-                        )
-                    }
-                )
+                | ({} if other_dim_len[i] == 0 else {"other": other_dim_len[i]})
             ),
         )
-        for dims_to_unstack in powerset(unstacked_dims.keys(), min_group_size=2)
+        for i, dims_to_unstack in enumerate(dims_powerset)
     ]
     fn = xr_function([x], outs)
     # we test through the complementary operation in xarray to avoid needing coords
@@ -168,6 +156,18 @@ def test_unstack_simple():
         .unstack("bc")
     )
     xr_assert_allclose(res, expected)
+
+
+def test_unstack_symbolic():
+    x = xtensor(dims=("a", "b", "c"))
+    y = stack(x, bc=("b", "c"))
+    y = y / y.sum("bc")
+    z = unstack(y, bc={"b": x.sizes["b"], "c": x.sizes["c"]})
+    x_test = xr_arange_like(x)
+    fn = xr_function([x], z)
+    res = fn(x_test)
+    expected_res = x_test / x_test.sum(["b", "c"]).transpose("a", "b", "c")
+    xr_assert_allclose(res, expected_res)
 
 
 def test_stack_unstack():

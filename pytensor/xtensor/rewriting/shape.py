@@ -32,13 +32,14 @@ def lower_stack(fgraph, node):
 @register_xcanonicalize
 @node_rewriter(tracks=[UnStack])
 def lower_unstack(fgraph, node):
-    [x] = node.inputs
+    x = node.inputs[0]
+    unstacked_lengths = node.inputs[1:]
     axis_to_unstack = x.type.dims.index(node.op.old_dim_name)
 
     x_tensor = tensor_from_xtensor(x)
     x_tensor_transposed = moveaxis(x_tensor, source=[axis_to_unstack], destination=[-1])
     final_tensor = x_tensor_transposed.reshape(
-        (*x_tensor_transposed.shape[:-1], *node.op.unstacked_lengths)
+        (*x_tensor_transposed.shape[:-1], *unstacked_lengths)
     )
 
     new_out = xtensor_from_tensor(final_tensor, dims=node.outputs[0].type.dims)

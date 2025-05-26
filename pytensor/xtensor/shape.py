@@ -1,6 +1,7 @@
 from collections.abc import Sequence
 
 from pytensor.graph import Apply
+from pytensor.tensor import as_tensor
 from pytensor.xtensor.basic import XOp
 from pytensor.xtensor.type import as_xtensor, xtensor
 
@@ -72,23 +73,17 @@ def stack(x, dim: dict[str, Sequence[str]] | None = None, **dims: Sequence[str])
 
 
 class UnStack(XOp):
-    __props__ = ("old_dim_name", "unstacked_dims", "unstacked_lengths")
+    __props__ = ("old_dim_name", "unstacked_dims")
 
     def __init__(
         self,
         old_dim_name: str,
         unstacked_dims: tuple[str, ...],
-        unstacked_lengths: tuple[int, ...],
     ):
         super().__init__()
         if old_dim_name in unstacked_dims:
             raise ValueError(
                 f"Dim to be unstacked {old_dim_name} can't be in {unstacked_dims}"
-            )
-        if len(unstacked_dims) != len(unstacked_lengths):
-            raise ValueError(
-                "Tuples with unstacked dim names and lengths must have the same length "
-                f"but have {len(unstacked_dims)} and {len(unstacked_lengths)}"
             )
         if not unstacked_dims:
             raise ValueError("Dims to unstack into can't be empty.")
@@ -96,10 +91,10 @@ class UnStack(XOp):
             raise ValueError("Only one dimension to unstack into, use rename instead")
         self.old_dim_name = old_dim_name
         self.unstacked_dims = unstacked_dims
-        self.unstacked_lengths = unstacked_lengths
 
-    def make_node(self, x):
-        x = as_xtensor(x)
+    def make_node(self, *inputs):
+        x = as_xtensor(inputs[0])
+        unstacked_lengths = [as_tensor(length, ndim=0).astype(int) for length in inputs[1:]]
         if self.old_dim_name not in x.type.dims:
             raise ValueError(
                 f"Dim to unstack {self.old_dim_name} must be in {x.type.dims}"
@@ -121,10 +116,10 @@ class UnStack(XOp):
 
         output = xtensor(
             dtype=x.type.dtype,
-            shape=(*batch_shape, *self.unstacked_lengths),
+            shape=(*batch_shape, *unstacked_lengths),
             dims=(*batch_dims, *self.unstacked_dims),
         )
-        return Apply(self, [x], [output])
+        return Apply(self, [x, *unstacked_lengths], [output])
 
 
 def unstack(x, dim: dict[str, dict[str, int]] | None = None, **dims: dict[str, int]):
@@ -138,6 +133,6 @@ def unstack(x, dim: dict[str, dict[str, int]] | None = None, **dims: dict[str, i
     y = x
     for old_dim_name, unstacked_dict in dims.items():
         y = UnStack(
-            old_dim_name, tuple(unstacked_dict.keys()), tuple(unstacked_dict.values())
-        )(y)
+            old_dim_name, tuple(unstacked_dict.keys())
+        )(y,  *tuple(unstacked_dict.values()))
     return y
